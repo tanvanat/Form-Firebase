@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>แบบประเมิน 21 ข้อ (0–4) + คิดคะแนน & เก็บผลลง Firestore</title>
+  <title>ตอนนี้! คุณมีโอกาสสำเร็จในแอมเวย์แค่ไหน?</title>
   <style>
     :root { --bg:#0f172a; --card:#111827; --muted:#94a3b8; --fg:#e5e7eb; --accent:#22c55e; --accent-2:#06b6d4; }
     * { box-sizing: border-box; }
@@ -34,18 +34,16 @@
     .kpi { padding: 14px; border-radius: 12px; background:#0a1628; border:1px solid rgba(255,255,255,0.06); text-align: center; }
     .kpi .n { font-size: 24px; font-weight: 800; }
     .kpi .l { color: var(--muted); font-size: 12px; }
-
     footer { text-align:center; color: var(--muted); font-size: 12px; margin-top: 22px; }
     .hint { color: var(--muted); font-size: 12px; }
-
     @media (max-width:680px){ .choices{ grid-template-columns: 1fr; } .kpis{ grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header class="card">
-      <h1>แบบประเมิน 21 ข้อ (ให้คะแนน 0–4)</h1>
-      <p>เลือกคำตอบในแต่ละข้อ: 0 = 0 คะแนน … 4 = 4 คะแนน ระบบจะคำนวณ <b>คะแนนรวม</b> และ <b>เปอร์เซ็นต์</b> และบันทึกผลลงฐานข้อมูล</p>
+      <h1>ตอนนี้! คุณมีโอกาสสำเร็จในแอมเวย์แค่ไหน?</h1>
+      <p>ประเมินความเข้าใจที่ได้เรียนรู้ไป</p>
       <div class="meta">
         <input id="name" placeholder="ชื่อเล่น (บังคับ)" required />
       </div>
@@ -53,7 +51,6 @@
 
     <main class="card content">
       <form id="form">
-        <div class="legend">ค่าคำตอบ: <span>0 – ไม่สังเกตเลย</span><span>1 – ไม่ค่อยสังเกต</span><span>2 – ปานกลาง</span><span>3 – บ่อย</span><span>4 – ตลอดเวลา</span></div>
         <div id="questions"></div>
         <div class="actions">
           <button type="submit" class="primary">ส่งและดูผล</button>
@@ -65,18 +62,9 @@
         <h2 style="margin:0 0 8px">ผลการประเมิน</h2>
         <div class="hint" id="who"></div>
         <div class="kpis">
-          <div class="kpi">
-            <div class="n" id="score">0</div>
-            <div class="l">คะแนนรวม</div>
-          </div>
-          <div class="kpi">
-            <div class="n" id="max">0</div>
-            <div class="l">คะแนนเต็ม</div>
-          </div>
-          <div class="kpi">
-            <div class="n" id="percent">0%</div>
-            <div class="l">เปอร์เซ็นต์</div>
-          </div>
+          <div class="kpi"><div class="n" id="score">0</div><div class="l">คะแนนรวม</div></div>
+          <div class="kpi"><div class="n" id="max">0</div><div class="l">คะแนนเต็ม</div></div>
+          <div class="kpi"><div class="n" id="percent">0%</div><div class="l">เปอร์เซ็นต์</div></div>
         </div>
         <div class="actions" style="margin-top:16px">
           <button type="button" class="primary" id="retake">ทำใหม่</button>
@@ -85,45 +73,41 @@
         <footer>ข้อมูลถูกบันทึกลง Firestore (collection: <code>responses</code>)</footer>
       </section>
     </main>
-    <footer>ปรับแก้ข้อความคำถามได้ในตัวแปร <code>questions</code> ด้านล่าง</footer>
+    <footer>แก้คำถาม/ตัวเลือกได้ใน <code>questions.js</code></footer>
   </div>
 
-  <!-- โหลดโมดูลแอป Firebase (ของคุณ) ก่อน -->
+  <!-- โหลด Firebase app โมดูลของคุณ -->
   <script type="module" src="./Firebase-app.js"></script>
 
-  <!-- สคริปต์หลักของหน้า: ใช้ Firestore แบบ modular -->
+  <!-- สคริปต์หลักของหน้า -->
   <script type="module">
     import { db } from './Firebase-app.js';
     import { collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+    import { items, MAX_TOTAL } from './questions.js';
 
-    // ---------- 1) ตั้งคำถาม 21 ข้อ ----------
-    const questions = Array.from({length: 21}, (_, i) => `ข้อที่ ${i+1}: ใส่ข้อความคำถามของคุณที่นี่`);
-    const choiceLabels = ["0 – ไม่สังเกตเลย","1 – ไม่ค่อยสังเกต","2 – ปานกลาง","3 – บ่อย","4 – ตลอดเวลา"];
-
-    // ---------- 2) Render คำถาม ----------
+    // Render
     const $qs = document.getElementById('questions');
     function renderQuestions(){
       $qs.innerHTML = '';
-      questions.forEach((q, idx) => {
+      items.forEach((item, idx) => {
         const div = document.createElement('div');
         div.className = 'q';
         div.innerHTML = `
-          <h3>${q}</h3>
+          <h3>${item.q}</h3>
           <div class="choices">
-            ${choiceLabels.map((lab, val) => `
+            ${item.choices.map(c => `
               <label class="pill">
-                <input type="radio" name="q${idx}" value="${val}" required />
-                <span>${lab}</span>
+                <input type="radio" name="q${idx}" value="${c.value}" required />
+                <span>${c.label}</span>
               </label>
             `).join('')}
-          </div>
-        `;
+          </div>`;
         $qs.appendChild(div);
       });
     }
     renderQuestions();
 
-    // ---------- 3) คำนวณ & บันทึก ----------
+    // Submit & score
     const form = document.getElementById('form');
     const resBox = document.getElementById('result');
     const scoreEl = document.getElementById('score');
@@ -135,18 +119,18 @@
       e.preventDefault();
       if (!form.reportValidity()) return;
 
-      const totalQuestions = questions.length;
-      const max = totalQuestions * 4;
-      let sum = 0; const answers = [];
-
-      for(let i=0;i<totalQuestions;i++){
+      let sum = 0;
+      const answers = [];
+      for (let i = 0; i < items.length; i++) {
         const v = form.querySelector(`input[name="q${i}"]:checked`);
-        if(!v){ alert(`กรุณาตอบข้อที่ ${i+1}`); return; }
+        if (!v) { alert(`กรุณาตอบข้อที่ ${i+1}`); return; }
         const num = Number(v.value);
         sum += num; answers.push(num);
       }
 
+      const max = MAX_TOTAL;             // 84
       const pct = (sum / max) * 100;
+
       scoreEl.textContent = String(sum);
       maxEl.textContent = String(max);
       percentEl.textContent = pct.toFixed(2) + '%';
@@ -157,8 +141,8 @@
 
       const doc = {
         name,
-        answers,                 // length 21
-        totalQuestions,
+        answers,                          // ความยาว 21
+        totalQuestions: items.length,
         totalScore: sum,
         maxScore: max,
         percent: Number(pct.toFixed(2)),
@@ -189,10 +173,8 @@
 
     document.getElementById('copy').addEventListener('click', async () => {
       const name = document.getElementById('name').value.trim();
-      const totalQuestions = questions.length;
-      const max = totalQuestions * 4;
       const text = `ผลการประเมิน (ผู้ทำ: ${name})
-คะแนนรวม: ${scoreEl.textContent}/${max}  ( ${percentEl.textContent} )`;
+คะแนนรวม: ${scoreEl.textContent}/${maxEl.textContent}  ( ${percentEl.textContent} )`;
       try { await navigator.clipboard.writeText(text); alert('คัดลอกผลลัพธ์แล้ว'); } catch(e) { alert(text); }
     });
   </script>
