@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>แบบประเมิน 21 ข้อ (0–4) พร้อมคิดคะแนนและเปอร์เซ็นต์</title>
+  <title>แบบประเมิน 21 ข้อ (0–4) + คิดคะแนน & เก็บผลลง Firestore</title>
   <style>
     :root { --bg:#0f172a; --card:#111827; --muted:#94a3b8; --fg:#e5e7eb; --accent:#22c55e; --accent-2:#06b6d4; }
     * { box-sizing: border-box; }
@@ -45,7 +45,7 @@
   <div class="wrap">
     <header class="card">
       <h1>แบบประเมิน 21 ข้อ (ให้คะแนน 0–4)</h1>
-      <p>เลือกคำตอบในแต่ละข้อ: 0 = 0 คะแนน … 4 = 4 คะแนน ระบบจะคำนวณ <b>คะแนนรวม</b> และ <b>เปอร์เซ็นต์</b> ให้ทันทีหลังส่ง</p>
+      <p>เลือกคำตอบในแต่ละข้อ: 0 = 0 คะแนน … 4 = 4 คะแนน ระบบจะคำนวณ <b>คะแนนรวม</b> และ <b>เปอร์เซ็นต์</b> และบันทึกผลลงฐานข้อมูล</p>
       <div class="meta">
         <input id="name" placeholder="ชื่อเล่น (บังคับ)" required />
       </div>
@@ -82,27 +82,26 @@
           <button type="button" class="primary" id="retake">ทำใหม่</button>
           <button type="button" class="ghost" id="copy">คัดลอกผลลัพธ์</button>
         </div>
-        <footer>คำตอบนี้ถูกส่งไปยัง Google Sheet อัตโนมัติ</footer>
+        <footer>ข้อมูลถูกบันทึกลง Firestore (collection: <code>responses</code>)</footer>
       </section>
     </main>
     <footer>ปรับแก้ข้อความคำถามได้ในตัวแปร <code>questions</code> ด้านล่าง</footer>
   </div>
 
-  <script>
+  <!-- โหลดโมดูลแอป Firebase (ของคุณ) ก่อน -->
+  <script type="module" src="./Firebase-app.js"></script>
+
+  <!-- สคริปต์หลักของหน้า: ใช้ Firestore แบบ modular -->
+  <script type="module">
+    import { db } from './Firebase-app.js';
+    import { collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+
+    // ---------- 1) ตั้งคำถาม 21 ข้อ ----------
     const questions = Array.from({length: 21}, (_, i) => `ข้อที่ ${i+1}: ใส่ข้อความคำถามของคุณที่นี่`);
+    const choiceLabels = ["0 – ไม่สังเกตเลย","1 – ไม่ค่อยสังเกต","2 – ปานกลาง","3 – บ่อย","4 – ตลอดเวลา"];
 
-    const choiceLabels = [
-      "0 – ไม่สังเกตเลย",
-      "1 – ไม่ค่อยสังเกต",
-      "2 – ปานกลาง",
-      "3 – บ่อย",
-      "4 – ตลอดเวลา",
-    ];
-
-    const ENDPOINT = "PASTE_YOUR_WEB_APP_URL_HERE"; // ใส่ URL จาก Google Apps Script Web App
-
+    // ---------- 2) Render คำถาม ----------
     const $qs = document.getElementById('questions');
-
     function renderQuestions(){
       $qs.innerHTML = '';
       questions.forEach((q, idx) => {
@@ -122,9 +121,9 @@
         $qs.appendChild(div);
       });
     }
-
     renderQuestions();
 
+    // ---------- 3) คำนวณ & บันทึก ----------
     const form = document.getElementById('form');
     const resBox = document.getElementById('result');
     const scoreEl = document.getElementById('score');
@@ -134,49 +133,44 @@
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      // ใช้ HTML5 validation ให้ browser เช็ค "required" ทั้งหมดก่อน
       if (!form.reportValidity()) return;
+
       const totalQuestions = questions.length;
       const max = totalQuestions * 4;
       let sum = 0; const answers = [];
+
       for(let i=0;i<totalQuestions;i++){
         const v = form.querySelector(`input[name="q${i}"]:checked`);
+        if(!v){ alert(`กรุณาตอบข้อที่ ${i+1}`); return; }
         const num = Number(v.value);
         sum += num; answers.push(num);
       }
+
       const pct = (sum / max) * 100;
-      scoreEl.textContent = sum.toString();
-      maxEl.textContent = max.toString();
+      scoreEl.textContent = String(sum);
+      maxEl.textContent = String(max);
       percentEl.textContent = pct.toFixed(2) + '%';
+
       const name = document.getElementById('name').value.trim();
-      if(!name){ alert('กรุณากรอกชื่อเล่น'); return; }
+      if (!name) { alert('กรุณากรอกชื่อเล่น'); return; }
       whoEl.textContent = `ผู้ทำ: ${name}`;
 
-      if (ENDPOINT && ENDPOINT.startsWith('http')) {
-        const payload = {
-          timestamp: new Date().toISOString(),
-          name,
-          answers,
-          totalQuestions,
-          totalScore: sum,
-          maxScore: max,
-          percent: Number(pct.toFixed(2))
-        };
-        try {
-          const resp = await fetch(ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify(payload)
-          });
-          const data = await resp.json().catch(()=>({}));
-          if(!resp.ok || data.ok === false){
-            console.warn('Sheet write failed', data);
-            alert('ส่งคะแนนสำเร็จ แต่บันทึกลงชีตไม่สำเร็จ');
-          }
-        } catch(err){
-          console.error(err);
-          alert('ส่งคะแนนสำเร็จ แต่เชื่อมต่อชีตไม่ได้');
-        }
+      const doc = {
+        name,
+        answers,                 // length 21
+        totalQuestions,
+        totalScore: sum,
+        maxScore: max,
+        percent: Number(pct.toFixed(2)),
+        createdAt: serverTimestamp()
+      };
+
+      try {
+        await addDoc(collection(db, "responses"), doc);
+        console.log("✅ Saved to Firestore");
+      } catch (e) {
+        console.error("❌ Firestore error:", e);
+        alert('บันทึกลงฐานข้อมูลไม่สำเร็จ: ' + (e?.message || 'unknown error'));
       }
 
       resBox.style.display = 'block';
@@ -197,7 +191,8 @@
       const name = document.getElementById('name').value.trim();
       const totalQuestions = questions.length;
       const max = totalQuestions * 4;
-      const text = `ผลการประเมิน (ผู้ทำ: ${name})\nคะแนนรวม: ${scoreEl.textContent}/${max}  ( ${percentEl.textContent} )`;
+      const text = `ผลการประเมิน (ผู้ทำ: ${name})
+คะแนนรวม: ${scoreEl.textContent}/${max}  ( ${percentEl.textContent} )`;
       try { await navigator.clipboard.writeText(text); alert('คัดลอกผลลัพธ์แล้ว'); } catch(e) { alert(text); }
     });
   </script>
