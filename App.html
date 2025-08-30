@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>แบบประเมิน 21 ข้อ (0–4) พร้อมคิดคะแนนและเปอร์เซ็นต์</title>
+  <style>
+    :root { --bg:#0f172a; --card:#111827; --muted:#94a3b8; --fg:#e5e7eb; --accent:#22c55e; --accent-2:#06b6d4; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; background: linear-gradient(180deg, #0b1220, #0f172a 40%); color: var(--fg); }
+    .wrap { max-width: 880px; margin: 24px auto 64px; padding: 0 16px; }
+    .card { background: linear-gradient(180deg, #0f172a, #0b1020); border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 30px 60px rgba(0,0,0,0.35); border-radius: 18px; }
+    header.card { padding: 20px 24px; position: sticky; top: 0; z-index: 10; backdrop-filter: blur(6px); }
+    header h1 { margin: 4px 0 2px; font-size: clamp(20px, 3vw, 28px); }
+    header p { margin: 0; color: var(--muted); font-size: 14px; }
+    .meta { margin-top: 10px; }
+    .meta input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: #0b1324; color: var(--fg); }
+
+    .content { padding: 16px; }
+    .q { margin: 16px 0; padding: 16px; background: #0b1324; border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); }
+    .q h3 { margin: 0 0 8px; font-size: 16px; }
+    .choices { display: grid; gap: 8px; grid-template-columns: repeat(5, minmax(0,1fr)); }
+    .pill { display:flex; align-items:center; gap:8px; padding: 10px 10px; border-radius: 12px; border:1px solid rgba(255,255,255,0.08); background:#0a1628; cursor:pointer; }
+    .pill input { accent-color: var(--accent-2); }
+    .legend { display:flex; gap:10px; flex-wrap: wrap; margin: 6px 0 2px; color: var(--muted); font-size: 12px; }
+
+    .actions { display:flex; flex-wrap: wrap; gap:12px; margin-top: 16px; }
+    button { padding: 12px 16px; border-radius: 12px; border: 0; cursor: pointer; font-weight: 600; }
+    .primary { background: var(--accent-2); color: #05202a; }
+    .ghost { background: transparent; color: var(--fg); border:1px solid rgba(255,255,255,0.15); }
+
+    .result { margin-top: 18px; padding: 18px; border-radius: 16px; border:1px solid rgba(255,255,255,0.1); background: #07101e; }
+    .kpis { display:grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap:12px; margin-top: 10px; }
+    .kpi { padding: 14px; border-radius: 12px; background:#0a1628; border:1px solid rgba(255,255,255,0.06); text-align: center; }
+    .kpi .n { font-size: 24px; font-weight: 800; }
+    .kpi .l { color: var(--muted); font-size: 12px; }
+
+    footer { text-align:center; color: var(--muted); font-size: 12px; margin-top: 22px; }
+    .hint { color: var(--muted); font-size: 12px; }
+
+    @media (max-width:680px){ .choices{ grid-template-columns: 1fr; } .kpis{ grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="card">
+      <h1>แบบประเมิน 21 ข้อ (ให้คะแนน 0–4)</h1>
+      <p>เลือกคำตอบในแต่ละข้อ: 0 = 0 คะแนน … 4 = 4 คะแนน ระบบจะคำนวณ <b>คะแนนรวม</b> และ <b>เปอร์เซ็นต์</b> ให้ทันทีหลังส่ง</p>
+      <div class="meta">
+        <input id="name" placeholder="ชื่อเล่น (บังคับ)" required />
+      </div>
+    </header>
+
+    <main class="card content">
+      <form id="form">
+        <div class="legend">ค่าคำตอบ: <span>0 – ไม่สังเกตเลย</span><span>1 – ไม่ค่อยสังเกต</span><span>2 – ปานกลาง</span><span>3 – บ่อย</span><span>4 – ตลอดเวลา</span></div>
+        <div id="questions"></div>
+        <div class="actions">
+          <button type="submit" class="primary">ส่งและดูผล</button>
+          <button type="button" class="ghost" id="resetBtn">ล้างคำตอบ</button>
+        </div>
+      </form>
+
+      <section id="result" class="result" style="display:none">
+        <h2 style="margin:0 0 8px">ผลการประเมิน</h2>
+        <div class="hint" id="who"></div>
+        <div class="kpis">
+          <div class="kpi">
+            <div class="n" id="score">0</div>
+            <div class="l">คะแนนรวม</div>
+          </div>
+          <div class="kpi">
+            <div class="n" id="max">0</div>
+            <div class="l">คะแนนเต็ม</div>
+          </div>
+          <div class="kpi">
+            <div class="n" id="percent">0%</div>
+            <div class="l">เปอร์เซ็นต์</div>
+          </div>
+        </div>
+        <div class="actions" style="margin-top:16px">
+          <button type="button" class="primary" id="retake">ทำใหม่</button>
+          <button type="button" class="ghost" id="copy">คัดลอกผลลัพธ์</button>
+        </div>
+        <footer>คำตอบนี้ถูกส่งไปยัง Google Sheet อัตโนมัติ</footer>
+      </section>
+    </main>
+    <footer>ปรับแก้ข้อความคำถามได้ในตัวแปร <code>questions</code> ด้านล่าง</footer>
+  </div>
+
+  <script>
+    const questions = Array.from({length: 21}, (_, i) => `ข้อที่ ${i+1}: ใส่ข้อความคำถามของคุณที่นี่`);
+
+    const choiceLabels = [
+      "0 – ไม่สังเกตเลย",
+      "1 – ไม่ค่อยสังเกต",
+      "2 – ปานกลาง",
+      "3 – บ่อย",
+      "4 – ตลอดเวลา",
+    ];
+
+    const ENDPOINT = "PASTE_YOUR_WEB_APP_URL_HERE"; // ใส่ URL จาก Google Apps Script Web App
+
+    const $qs = document.getElementById('questions');
+
+    function renderQuestions(){
+      $qs.innerHTML = '';
+      questions.forEach((q, idx) => {
+        const div = document.createElement('div');
+        div.className = 'q';
+        div.innerHTML = `
+          <h3>${q}</h3>
+          <div class="choices">
+            ${choiceLabels.map((lab, val) => `
+              <label class="pill">
+                <input type="radio" name="q${idx}" value="${val}" required />
+                <span>${lab}</span>
+              </label>
+            `).join('')}
+          </div>
+        `;
+        $qs.appendChild(div);
+      });
+    }
+
+    renderQuestions();
+
+    const form = document.getElementById('form');
+    const resBox = document.getElementById('result');
+    const scoreEl = document.getElementById('score');
+    const maxEl = document.getElementById('max');
+    const percentEl = document.getElementById('percent');
+    const whoEl = document.getElementById('who');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      // ใช้ HTML5 validation ให้ browser เช็ค "required" ทั้งหมดก่อน
+      if (!form.reportValidity()) return;
+      const totalQuestions = questions.length;
+      const max = totalQuestions * 4;
+      let sum = 0; const answers = [];
+      for(let i=0;i<totalQuestions;i++){
+        const v = form.querySelector(`input[name="q${i}"]:checked`);
+        const num = Number(v.value);
+        sum += num; answers.push(num);
+      }
+      const pct = (sum / max) * 100;
+      scoreEl.textContent = sum.toString();
+      maxEl.textContent = max.toString();
+      percentEl.textContent = pct.toFixed(2) + '%';
+      const name = document.getElementById('name').value.trim();
+      if(!name){ alert('กรุณากรอกชื่อเล่น'); return; }
+      whoEl.textContent = `ผู้ทำ: ${name}`;
+
+      if (ENDPOINT && ENDPOINT.startsWith('http')) {
+        const payload = {
+          timestamp: new Date().toISOString(),
+          name,
+          answers,
+          totalQuestions,
+          totalScore: sum,
+          maxScore: max,
+          percent: Number(pct.toFixed(2))
+        };
+        try {
+          const resp = await fetch(ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload)
+          });
+          const data = await resp.json().catch(()=>({}));
+          if(!resp.ok || data.ok === false){
+            console.warn('Sheet write failed', data);
+            alert('ส่งคะแนนสำเร็จ แต่บันทึกลงชีตไม่สำเร็จ');
+          }
+        } catch(err){
+          console.error(err);
+          alert('ส่งคะแนนสำเร็จ แต่เชื่อมต่อชีตไม่ได้');
+        }
+      }
+
+      resBox.style.display = 'block';
+      window.scrollTo({ top: resBox.offsetTop - 12, behavior: 'smooth' });
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      form.reset();
+      resBox.style.display = 'none';
+    });
+
+    document.getElementById('retake').addEventListener('click', () => {
+      resBox.style.display = 'none';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    document.getElementById('copy').addEventListener('click', async () => {
+      const name = document.getElementById('name').value.trim();
+      const totalQuestions = questions.length;
+      const max = totalQuestions * 4;
+      const text = `ผลการประเมิน (ผู้ทำ: ${name})\nคะแนนรวม: ${scoreEl.textContent}/${max}  ( ${percentEl.textContent} )`;
+      try { await navigator.clipboard.writeText(text); alert('คัดลอกผลลัพธ์แล้ว'); } catch(e) { alert(text); }
+    });
+  </script>
+</body>
+</html>
