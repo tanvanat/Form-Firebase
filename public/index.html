@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ตอนนี้! คุณมีโอกาสสำเร็จในแอมเวย์แค่ไหน?</title>
+  <style>
+    :root { --bg:#0f172a; --card:#111827; --muted:#94a3b8; --fg:#e5e7eb; --accent:#22c55e; --accent-2:#06b6d4; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; background: linear-gradient(180deg, #0b1220, #0f172a 40%); color: var(--fg); }
+    .wrap { max-width: 880px; margin: 24px auto 64px; padding: 0 16px; }
+    .card { background: linear-gradient(180deg, #0f172a, #0b1020); border: 1px solid rgba(255,255,255,0.06); box-shadow: 0 30px 60px rgba(0,0,0,0.35); border-radius: 18px; }
+    header.card { padding: 20px 24px; position: sticky; top: 0; z-index: 10; backdrop-filter: blur(6px); }
+    header h1 { margin: 4px 0 2px; font-size: clamp(20px, 3vw, 28px); }
+    header p { margin: 0; color: var(--muted); font-size: 14px; }
+    .meta { margin-top: 10px; }
+    .meta input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: #0b1324; color: var(--fg); }
+
+    .content { padding: 16px; }
+    .q { margin: 16px 0; padding: 16px; background: #0b1324; border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); }
+    .q h3 { margin: 0 0 8px; font-size: 16px; }
+    .choices { display: grid; gap: 8px; grid-template-columns: repeat(5, minmax(0,1fr)); }
+    .pill { display:flex; align-items:center; gap:8px; padding: 10px 10px; border-radius: 12px; border:1px solid rgba(255,255,255,0.08); background:#0a1628; cursor:pointer; }
+    .pill input { accent-color: var(--accent-2); }
+    .legend { display:flex; gap:10px; flex-wrap: wrap; margin: 6px 0 2px; color: var(--muted); font-size: 12px; }
+
+    .actions { display:flex; flex-wrap: wrap; gap:12px; margin-top: 16px; }
+    button { padding: 12px 16px; border-radius: 12px; border: 0; cursor: pointer; font-weight: 600; }
+    .primary { background: var(--accent-2); color: #05202a; }
+    .ghost { background: transparent; color: var(--fg); border:1px solid rgba(255,255,255,0.15); }
+
+    .result { margin-top: 18px; padding: 18px; border-radius: 16px; border:1px solid rgba(255,255,255,0.1); background: #07101e; }
+    .kpis { display:grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap:12px; margin-top: 10px; }
+    .kpi { padding: 14px; border-radius: 12px; background:#0a1628; border:1px solid rgba(255,255,255,0.06); text-align: center; }
+    .kpi .n { font-size: 24px; font-weight: 800; }
+    .kpi .l { color: var(--muted); font-size: 12px; }
+    footer { text-align:center; color: var(--muted); font-size: 12px; margin-top: 22px; }
+    .hint { color: var(--muted); font-size: 12px; }
+    @media (max-width:680px){ .choices{ grid-template-columns: 1fr; } .kpis{ grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="card">
+      <h1>ตอนนี้! คุณมีโอกาสสำเร็จในแอมเวย์แค่ไหน?</h1>
+      <p>ประเมินความเข้าใจที่ได้เรียนรู้ไป</p>
+      <div class="meta">
+        <input id="name" placeholder="ชื่อเล่น" required />
+      </div>
+    </header>
+
+    <main class="card content">
+      <form id="form">
+        <div id="questions"></div>
+        <div class="actions">
+          <button type="submit" class="primary" id="submitBtn">ส่งและดูผล</button>
+          <button type="button" class="ghost" id="resetBtn">ล้างคำตอบ</button>
+        </div>
+      </form>
+
+      <section id="result" class="result" style="display:none">
+        <h2 style="margin:0 0 8px">ผลการประเมิน</h2>
+        <div class="hint" id="who"></div>
+        <div class="kpis">
+          <div class="kpi"><div class="n" id="score">0</div><div class="l">คะแนนรวม</div></div>
+          <div class="kpi"><div class="n" id="max">0</div><div class="l">คะแนนเต็ม</div></div>
+          <div class="kpi"><div class="n" id="percent">0%</div><div class="l">เปอร์เซ็นต์</div></div>
+        </div>
+        <div class="actions" style="margin-top:16px">
+          <button type="button" class="primary" id="retake">ทำใหม่</button>
+          <button type="button" class="ghost" id="copy">คัดลอกผลลัพธ์</button>
+        </div>
+        <footer>ข้อมูลถูกบันทึกลง Firestore (collection: <code>responses</code>)</footer>
+      </section>
+    </main>
+    <footer>แก้คำถาม/ตัวเลือกได้ใน <code>questions.js</code></footer>
+  </div>
+
+  <!-- Firebase app (ไฟล์ของคุณที่ export db) -->
+  <script type="module" src="./Firebase-app.js"></script>
+
+  <!-- สคริปต์หลักของหน้า -->
+  <script type="module">
+    import { db } from './Firebase-app.js';
+    import { collection, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+    import { items, MAX_TOTAL } from './questions.js';
+
+    // ---------- Render ----------
+    const $qs = document.getElementById('questions');
+    function renderQuestions(){
+      $qs.innerHTML = '';
+      items.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'q';
+        div.innerHTML = `
+          <h3>${item.q}</h3>
+          <div class="choices">
+            ${item.choices.map(c => `
+              <label class="pill">
+                <input type="radio" name="q${idx}" value="${c.value}" required />
+                <span>${c.label}</span>
+              </label>
+            `).join('')}
+          </div>`;
+        $qs.appendChild(div);
+      });
+    }
+    renderQuestions();
+
+    // ---------- Elements ----------
+    const form = document.getElementById('form');
+    const resBox = document.getElementById('result');
+    const scoreEl = document.getElementById('score');
+    const maxEl = document.getElementById('max');
+    const percentEl = document.getElementById('percent');
+    const whoEl = document.getElementById('who');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // ---------- Idempotent token ----------
+    const FORM_ID = 'amway-quiz-v1';
+    function getSubmitToken() {
+      const k = `${FORM_ID}:submitToken`;
+      let t = sessionStorage.getItem(k);
+      if (!t) {
+        t = (crypto && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        sessionStorage.setItem(k, t);
+      }
+      return t;
+    }
+    function resetSubmitToken() {
+      sessionStorage.removeItem(`${FORM_ID}:submitToken`);
+    }
+
+    // ---------- Submit & score ----------
+    let submitting = false;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!form.reportValidity()) return;
+      if (submitting) return; // กันคลิกซ้ำ
+      submitting = true;
+      submitBtn.disabled = true;
+
+      try {
+        let sum = 0;
+        const answers = [];
+        for (let i = 0; i < items.length; i++) {
+          const v = form.querySelector(`input[name="q${i}"]:checked`);
+          if (!v) {
+            alert(`กรุณาตอบข้อที่ ${i+1}`);
+            submitting = false; submitBtn.disabled = false; return;
+          }
+          const num = Number(v.value);
+          sum += num; answers.push(num);
+        }
+
+        const max = MAX_TOTAL; // เช่น 84
+        const pct = (sum / max) * 100;
+
+        scoreEl.textContent = String(sum);
+        maxEl.textContent = String(max);
+        percentEl.textContent = pct.toFixed(2) + '%';
+
+        const name = document.getElementById('name').value.trim();
+        if (!name) { alert('กรุณากรอกชื่อเล่น'); submitting = false; submitBtn.disabled = false; return; }
+        whoEl.textContent = `ผู้ทำ: ${name}`;
+
+        const docData = {
+          name,
+          answers,
+          totalQuestions: items.length,
+          totalScore: sum,
+          maxScore: max,
+          percent: Number(pct.toFixed(2)),
+          createdAt: serverTimestamp()
+        };
+
+        // setDoc + docId คงที่ต่อการส่งหนึ่งครั้ง → กันซ้ำ
+        const colRef = collection(db, "responses");
+        const docId = `${FORM_ID}_${getSubmitToken()}`;
+        const docRef = doc(colRef, docId);
+
+        await setDoc(docRef, docData);
+
+        console.log("✅ Saved to Firestore as", docId);
+
+        resBox.style.display = 'block';
+        window.scrollTo({ top: resBox.offsetTop - 12, behavior: 'smooth' });
+      } catch (e) {
+        console.error("❌ Firestore error:", e);
+        alert('บันทึกลงฐานข้อมูลไม่สำเร็จ: ' + (e?.message || 'unknown error'));
+      } finally {
+        submitting = false;
+        submitBtn.disabled = false;
+      }
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      form.reset();
+      resBox.style.display = 'none';
+    });
+
+    document.getElementById('retake').addEventListener('click', () => {
+      resBox.style.display = 'none';
+      resetSubmitToken(); // ทำใหม่ = token ใหม่ => สร้างเอกสารใหม่
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    document.getElementById('copy').addEventListener('click', async () => {
+      const name = document.getElementById('name').value.trim();
+      const text = `ผลการประเมิน (ผู้ทำ: ${name})
+คะแนนรวม: ${scoreEl.textContent}/${maxEl.textContent}  ( ${percentEl.textContent} )`;
+      try { await navigator.clipboard.writeText(text); alert('คัดลอกผลลัพธ์แล้ว'); } catch(e) { alert(text); }
+    });
+  </script>
+</body>
+</html>
