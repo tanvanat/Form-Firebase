@@ -1,5 +1,3 @@
-//It reads all existing docs from Firestore and inserts/upserts them into MySQL
-
 // functions/scripts/migrate.js
 import dotenv from "dotenv";
 import mysql from "mysql2/promise";
@@ -8,12 +6,7 @@ import fs from "node:fs";
 
 dotenv.config();
 
-/** ========= Firestore Admin init =========
- * Option A (prod Firestore): put a service account JSON at functions/serviceAccountKey.json
- *   - In GCP: IAM & Admin → Service Accounts → Create key (JSON)
- *   - DO NOT commit this file. Add to .gitignore.
- * Option B (Emulator): set env FIRESTORE_EMULATOR_HOST=localhost:8080 and skip credential
- */
+/** ========= Firestore Admin init ========= */
 const saPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || "./serviceAccountKey.json";
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
   if (!fs.existsSync(saPath)) {
@@ -23,10 +16,9 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
   }
   admin.initializeApp({
     credential: admin.credential.cert(saPath),
-    projectId: process.env.FIREBASE_PROJECT_ID, // optional
+    projectId: process.env.FIREBASE_PROJECT_ID,
   });
 } else {
-  // emulator needs no creds
   admin.initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID || "demo-project" });
   console.log("Using Firestore emulator:", process.env.FIRESTORE_EMULATOR_HOST);
 }
@@ -38,17 +30,38 @@ const pool = mysql.createPool({
   host: process.env.MYSQL_HOST,
   user: process.env.MYSQL_USER,
   password: process.env.MYSQL_PASSWORD,
-  database: process.env.MYSQL_DATABASE,  // e.g. form_backup
+  database: process.env.MYSQL_DATABASE, // e.g. firebase_connect
   waitForConnections: true,
   connectionLimit: Number(process.env.MYSQL_CONN_LIMIT || 5),
   queueLimit: 0,
 });
 
+/** ========= Helpers ========= */
+function toMysqlDatetime(input) {
+  // รองรับ Firestore Timestamp { _seconds } / { seconds } / string / Date
+  let d;
+  if (input && typeof input === "object" && typeof input._seconds === "number") {
+    d = new Date(input._seconds * 1000);
+  } else if (input && typeof input === "object" && typeof input.seconds === "number") {
+    d = new Date(input.seconds * 1000);
+  } else if (typeof input === "string" || input instanceof Date) {
+    d = new Date(input);
+  } else {
+    d = new Date();
+  }
+  // แปลงเป็น "YYYY-MM-DD HH:MM:SS" (UTC offset safe)
+  const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 19)
+    .replace("T", " ");
+  return z;
+}
+
 /** ========= Upsert helpers ========= */
 async function upsertOneResponse(conn, id, data) {
   const {
     name,
-    answers,            // array length 21
+    answers, // array length 21
     totalQuestions,
     totalScore,
     maxScore,
@@ -56,42 +69,41 @@ async function upsertOneResponse(conn, id, data) {
     createdAt,
   } = data || {};
 
-  const created =
-    createdAt && createdAt._seconds ? new Date(createdAt._seconds * 1000) : new Date();
-
+  const createdAtStr = toMysqlDatetime(createdAt);
   const arr = Array.isArray(answers) ? answers : [];
 
-  await conn.query(
-    `INSERT INTO responses (id, name, totalQuestions, totalScore, maxScore, percent, createdAt, createdAtMs)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  // ⚠️ ตรงกับสคีมาใหม่: ไม่มี createdAtMs แล้ว
+  await conn.execute(
+    `INSERT INTO responses (id, name, totalQuestions, totalScore, maxScore, percent, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        name=VALUES(name),
        totalQuestions=VALUES(totalQuestions),
        totalScore=VALUES(totalScore),
        maxScore=VALUES(maxScore),
        percent=VALUES(percent),
-       createdAt=VALUES(createdAt),
-       createdAtMs=VALUES(createdAtMs)`,
+       createdAt=VALUES(createdAt)`,
     [
       id,
-      name || null,
-      totalQuestions ?? arr.length ?? 0,
-      totalScore ?? 0,
-      maxScore ?? 0,
-      percent ?? 0,
-      created,
-      created.getTime(),
+      name ?? null,
+      (totalQuestions ?? (arr.length || 0)),
+      (typeof totalScore === "number" ? totalScore : Number(totalScore) || 0),
+      (typeof maxScore === "number" ? maxScore : Number(maxScore) || 0),
+      (typeof percent === "number" ? percent : Number(percent) || 0),
+      createdAtStr,
     ]
   );
 
-  // replace per-question rows
-  await conn.query(`DELETE FROM response_answers WHERE response_id = ?`, [id]);
+  // สคีมาตามที่คุณกำหนด: ใช้คอลัมน์ name เป็น FK -> responses(id)
+
+  await conn.execute(`DELETE FROM response_answers WHERE name = ?`, [name]);
 
   if (arr.length > 0) {
-    const rows = arr.map((v, i) => [id, i + 1, Number(v) || 0]);
-    await conn.query(
-      `INSERT INTO response_answers (response_id, q_no, value)
-       VALUES ${rows.map(() => "(?, ?, ?)").join(",")}`,
+    const rows = arr.map((v, i) => [name, i + 1, Number(v) || 0]);
+    const placeholders = rows.map(() => "(?, ?, ?)").join(",");
+    await conn.execute(
+      `INSERT INTO response_answers (name, q_no, value)
+       VALUES ${placeholders}`,
       rows.flat()
     );
   }
@@ -104,9 +116,8 @@ async function main() {
   console.log(`Found ${snap.size} documents`);
 
   const conn = await pool.getConnection();
-  
+
   try {
-    // upsert per doc (commit per doc to avoid huge transactions)
     let i = 0;
     for (const doc of snap.docs) {
       i++;
@@ -118,7 +129,9 @@ async function main() {
     }
     console.log(`Done. Upserted ${i} docs ✅`);
   } catch (e) {
-    await pool.query("ROLLBACK");
+    try {
+      await conn.rollback();
+    } catch {}
     console.error("Migration error:", e);
     process.exitCode = 1;
   } finally {
